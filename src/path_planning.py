@@ -20,25 +20,31 @@ class PathPlan(object):
         self.traj_pub = rospy.Publisher("/trajectory/current", PoseArray, queue_size=10)
         self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
 
-        self.occupancy_cutoff = 0.9
+        self.occupancy_cutoff = 0.8
+        self.occ_map = None
 
 
     def map_cb(self, msg):
-        self.occ_map = msg.data
+        self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
         self.resolution = msg.info.resolution
         self.map_orientation = msg.info.origin.orientation
-        self.map_position = msg.info.origin.position
-        pass ## REMOVE AND FILL IN ##
+        self.map_position = np.array([[msg.info.origin.position.x, msg.info.origin.position.y]])
+
+        rospy.loginfo("map initialized!!")
+        rospy.loginfo("map shape: "+str(self.occ_map.shape))
 
 
     def odom_cb(self, msg):
         pass ## REMOVE AND FILL IN ##
         start_pt = msg.pose.pose.position # Point object
 
+
+        if self.occ_map is None: return
+
         x = start_pt.x
         y = start_pt.y
 
-        start_point = np.array[[y, x]]
+        start_point = np.array([[y, x]])
         start_point -= self.map_position
         start_point /= self.resolution
 
@@ -52,7 +58,7 @@ class PathPlan(object):
         x = self.goal_point.x
         y = self.goal_point.y
 
-        end_point = np.array[[y, x]]
+        end_point = np.array([[y, x]])
         end_point -= self.map_position
         end_point /= self.resolution
 
@@ -63,7 +69,11 @@ class PathPlan(object):
     def plan_path(self, start_point, end_point, map):
         ## CODE FOR PATH PLANNING ##
 
-        step_size = 1
+        self.trajectory.clear()
+
+        rospy.loginfo("Starting path planning!!")
+
+        step_size = 15
         adjacent_squares = np.array([[-1, 1], [0, 1], [1, 1],
                                     [-1, 0],         [1, 0],
                                     [-1, -1],[0, -1],[1, -1]])
@@ -77,13 +87,20 @@ class PathPlan(object):
 
         def in_collision(point):
             # get the points we want to check sized by the step_size and centered on the given point
-            check_points = np.indices(step_size, step_size).reshape(2, -1).T - np.array([int(step_size/2), int(step_size/2)]) + point
+            check_points = np.rint(np.indices((step_size, step_size)).reshape(2, -1).T - np.rint(np.array([step_size/2, step_size/2])) + np.rint(point)).astype(np.uint16)
+
+            # we don't want any points outside of the occupancy bounds but that probably won't happen?
+            # TODO
+
             occ_vals = map[check_points]
 
             # if any grid value is greater than cutoff, we're in collision
             return np.all(occ_vals > self.occupancy_cutoff)
 
         agenda = [[0, [start_point]]] # reverse sorted
+
+        visited = {(start_point[0,0], start_point[0,1])}
+
         full_path = None
 
         while agenda:
@@ -94,9 +111,11 @@ class PathPlan(object):
             path_so_far = last_vertex[1]
             last_point = path_so_far[-1]
 
-            if goal_dist(last_point) <= step_size**2:
+            if goal_dist(last_point) <= step_size:
                 # if we're within a __circle__ of radius step_size to the goal
                 full_path = path_so_far
+                rospy.loginfo("Path found")
+                print(full_path)
                 break
 
             # Create children from that last point
@@ -107,10 +126,14 @@ class PathPlan(object):
             for c in children:
                 if not in_collision(c):
                     # we can update cost and add it to the agenda
-                    new_cost = cost_so_far + goal_dist(c) + np.linalg.norm(c - last_point)
-                    new_path = path_so_far + [c]
+                    tup_vers = (c[0], c[1])
+                    if tup_vers not in visited:
+                        new_cost = cost_so_far + goal_dist(c) + np.linalg.norm(c - last_point)
+                        new_path = path_so_far + [c.reshape(1,2)]
 
-                    agenda.append([new_cost, new_path])
+                        agenda.append([new_cost, new_path])
+
+                        visited.add(tup_vers)
 
             # Reverse sort agenda
             agenda.sort(reverse=True, key=lambda x: x[0])
@@ -123,7 +146,8 @@ class PathPlan(object):
                 new_p = p * self.resolution
                 new_p += self.map_position
 
-                y, x = new_p
+                y = new_p[0,0]
+                x = new_p[0,1]
 
                 new_point = Point32(x, y, 0)
                 self.trajectory.addPoint(new_point)
