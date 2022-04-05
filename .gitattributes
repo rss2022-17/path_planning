@@ -1,0 +1,2 @@
+# Make sure the any Python scripts default to LF line ending
+*.py text eol=lf
