@@ -20,6 +20,8 @@ class PathPlan(object):
         self.traj_pub = rospy.Publisher("/trajectory/current", PoseArray, queue_size=10)
         self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
 
+        self.pose_pub = rospy.Publisher("/planning/popped_pose", PoseStamped, queue_size=10)
+
         self.occupancy_cutoff = 0.8
         self.occ_map = None
 
@@ -117,17 +119,20 @@ class PathPlan(object):
 
             return False
 
-            # occ_vals = map[check_points]
+            # occ_vals = map[check_points[:,0], check_points[:,1]]
 
-            # if occ_vals.shape != check_points.shape:
-            #     print("Occ vals shape: "+str(occ_vals.shape))
-            #     print("Check points shape: "+str(check_points.shape))
+            # # if occ_vals.shape != check_points.shape:
+            # #     print("Occ vals: "+str(occ_vals))
+            # #     print("Check points: "+str(check_points))
 
-            # assert occ_vals.shape == check_points.shape
+            # #     print("Occ vals shape: "+str(occ_vals.shape))
+            # #     print("Check points shape: "+str(check_points.shape))
+
+            # # assert occ_vals.shape == check_points.shape
             
-            # if np.count_nonzero(occ_vals):
-            #     print(occ_vals.shape)
-            #     print(occ_vals)
+            # # if np.count_nonzero(occ_vals):
+            # #     print(occ_vals.shape)
+            # #     print(occ_vals)
 
 
             # # if any grid value is greater than cutoff, we're in collision
@@ -135,16 +140,36 @@ class PathPlan(object):
 
 
         ## Start the A* Path Planning
-        agenda = [[0, [start_point]]] # reverse sorted
-        visited = {(start_point[0,0], start_point[0,1])} # visited set of tuple indices
+        agenda = [[goal_dist(start_point), 0, [start_point]]] # reverse sorted -- [estimated cost, cost_so_far, path]
+        visited = set() # visited set of tuple indices
         full_path = None
+
+        current_pose = PoseStamped()
+        current_pose.header.frame_id = "map"
 
         while agenda:
             # Pull a path and point from the agenda
             last_vertex = agenda.pop(-1)
-            cost_so_far = last_vertex[0]
-            path_so_far = last_vertex[1]
+            cost_so_far = last_vertex[1]
+            path_so_far = last_vertex[2]
             last_point = path_so_far[-1]
+
+            tup_vers = (last_point[0,0], last_point[0,1])
+
+            if tup_vers in visited: continue # if we've already pulled off a point, we found a more optimal path to it earlier
+            visited.add(tup_vers)
+
+            new_p = last_point * self.resolution
+            new_p += self.map_position
+
+            y = new_p[0,0]
+            x = new_p[0,1]
+
+            current_pose.pose.position.x = x
+            current_pose.pose.position.y = y
+
+            self.pose_pub.publish(current_pose)
+
 
             if goal_dist(last_point) <= step_size:
                 # if we're within a __circle__ of radius step_size to the goal
@@ -163,12 +188,12 @@ class PathPlan(object):
                     tup_vers = (c[0], c[1])
                     if tup_vers not in visited:
                         # we're not in collision or at a point we've visited
-                        new_cost = cost_so_far + goal_dist(c) + np.linalg.norm(c - last_point) # apply the A* heuristic
+                        new_cost_so_far = cost_so_far + np.linalg.norm(c - last_point)
+                        new_estimated_cost = new_cost_so_far + goal_dist(c) # apply the A* heuristic
                         new_path = path_so_far + [c.reshape(1,2)] # make the new path
 
-                        # add the new point to the agenda and the visited set
-                        agenda.append([new_cost, new_path])
-                        visited.add(tup_vers)
+                        # add the new point to the agenda
+                        agenda.append([new_estimated_cost, new_cost_so_far, new_path])
 
             # Reverse sort agenda so we can quickly pop it
             agenda.sort(reverse=True, key=lambda x: x[0])
