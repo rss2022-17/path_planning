@@ -39,11 +39,24 @@ class PurePursuit(object):
         car_y = msg.pose.pose.position.y
         car_point = np.array([car_x,car_y])
         points = np.array(self.trajectory.points)
-        print(car_point.shape) 
-        print(points.shape) 
         #step 2, find path point closest to vehicle
         #TODO: Update this to look at intermediate points on trajectory
-        distances = np.linalg.norm(points-np.tile(car_point, (len(self.trajectory.distances),1)))
+        distances = np.zeros(len(points-1))
+        for i in range(len(points)-1):
+            v = points[i]
+            w = points[i+1]
+
+            l2 = np.linalg.norm(v-w)
+            t = ((car_point[0]-v[0])*(w[0]-v[0]) + (car_point[1]-v[1])*(w[1]-v[1]))/l2
+            t = np.max(0, np.min(1,t))
+            close_point = np.array([v[0] + t*(w[0]-v[0]), v[1] + t*(w[1]-v[1])])
+            distances[i] = (np.linalg.norm(car_point-close_point))
+
+
+
+
+        #distances = np.linalg.norm(points-np.tile(car_point, (len(self.trajectory.distances),1)))
+
         #for points in points:
         #    distances.append(np.norm(point-car_point)) #((point[0]-car_x)**2 +  (point[1]-car_y)**2)**0.5)
         min_ind = np.argmin(distances) 
@@ -79,7 +92,7 @@ class PurePursuit(object):
         #step 4, Transform the goal point to vehicle coordinates
         rot_mat = tf.transformations.quaternion_matrix((msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w))
         trans_mat = tf.transformations.translation_matrix((msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z))
-        combined_mat = np.matmul(trans_mat, rot_mat)
+        combined_mat = np.linalg.inv(np.matmul(trans_mat, rot_mat))
         translated_goal = np.transpose(np.array([goal[0], goal[1], 0, 1]))
         translated_goal = np.matmul(combined_mat, translated_goal)
 #        translated_goal = np.array([translated_goal[0], translated_goal[1]])
