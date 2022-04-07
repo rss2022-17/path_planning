@@ -25,7 +25,7 @@ class PathPlan(object):
         self.occupancy_cutoff = 0.8
         self.occ_map = None
 
-        self.save_trajs = False
+        self.save_trajs = True
         self.num_paths_made = 0
 
 
@@ -180,7 +180,7 @@ class PathPlan(object):
         self.trajectory.clear()
         rospy.loginfo("Starting path planning!!")
 
-        step_size = rospy.get_param("~step_size", 9)
+        step_size = rospy.get_param("~step_size", 3)
         rospy.loginfo("Using step size of "+str(step_size)+" from parameter: ~step_size")
 
         # Initialize here so we can reuse it
