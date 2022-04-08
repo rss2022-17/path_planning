@@ -22,7 +22,7 @@ class PurePursuit(object):
         self.wheelbase_length = 0.32#
         self.trajectory  = utils.LineTrajectory("/followed_trajectory")
         self.traj_sub = rospy.Subscriber("/trajectory/current", PoseArray, self.trajectory_callback, queue_size=1)
-        self.drive_pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
+        self.drive_pub = rospy.Publisher("/vesc/high_level/ackermann_cmd_mux/input/nav_2", AckermannDriveStamped, queue_size=1)
 
         self.odom_sub = rospy.Subscriber("/pf/pose/odom", Odometry, self.odom_callback, queue_size=1)
 
