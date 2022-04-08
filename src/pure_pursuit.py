@@ -16,7 +16,7 @@ class PurePursuit(object):
     """
     def __init__(self):
         self.odom_topic       = rospy.get_param("~odom_topic")
-        self.lookahead        = 10.0
+        self.lookahead        = 0.5
         self.speed            = 1
         #self.wrap             = # FILL IN #
         self.wheelbase_length = 0.32#
@@ -40,24 +40,11 @@ class PurePursuit(object):
             car_y = msg.pose.pose.position.y
             car_point = np.array([car_x,car_y])
             points = np.array(self.trajectory.points)
+            print(car_point.shape) 
+            print(points.shape) 
             #step 2, find path point closest to vehicle
             #TODO: Update this to look at intermediate points on trajectory
-            distances = np.zeros(len(points-1))
-            for i in range(len(points)-1):
-                v = points[i]
-                w = points[i+1]
-
-                l2 = np.linalg.norm(v-w)
-                t = ((car_point[0]-v[0])*(w[0]-v[0]) + (car_point[1]-v[1])*(w[1]-v[1]))/l2
-                t = np.max(0, np.min(1,t))
-                close_point = np.array([v[0] + t*(w[0]-v[0]), v[1] + t*(w[1]-v[1])])
-                distances[i] = (np.linalg.norm(car_point-close_point))
-
-
-
-
-            #distances = np.linalg.norm(points-np.tile(car_point, (len(self.trajectory.distances),1)))
-
+            distances = np.linalg.norm(points-np.tile(car_point, (len(self.trajectory.distances),1)))
             #for points in points:
             #    distances.append(np.norm(point-car_point)) #((point[0]-car_x)**2 +  (point[1]-car_y)**2)**0.5)
             min_ind = np.argmin(distances) 
@@ -110,15 +97,12 @@ class PurePursuit(object):
             drive_cmd.drive.speed = self.speed
             self.drive_pub.publish(drive_cmd)
         except Exception as err:
-            print(err)
-
             drive_cmd = AckermannDriveStamped()
             drive_cmd.header.stamp = rospy.Time.now()
             drive_cmd.header.frame_id = "/base_link_pf"
             drive_cmd.drive.steering_angle = 0
             drive_cmd.drive.speed = 0
             self.drive_pub.publish(drive_cmd)
-
 
 
 if __name__=="__main__":
