@@ -22,6 +22,9 @@ class PathPlan(object):
 
         self.pose_pub = rospy.Publisher("/planning/popped_pose", PoseStamped, queue_size=10)
 
+        self.start_point = None
+        self.goal_point = None
+
         self.occupancy_cutoff = 0.8
         self.occ_map = None
 
@@ -76,6 +79,10 @@ class PathPlan(object):
 
         # Store all of the map data into instance variables
         self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
+        self.u_max = msg.info.height - 1
+        self.v_max = msg.info.width - 1
+
         mo = msg.info.origin.orientation
 
         self.resolution = msg.info.resolution
@@ -117,6 +124,11 @@ class PathPlan(object):
 
     def goal_cb(self, msg):
         if self.occ_map is None: return
+
+        if self.start_point is None: 
+            rospy.loginfo("Could not plan a trajectory because there's no odom!"+\
+                "\n\tMake sure that you're publishing to "+self.odom_topic)
+            return
 
         self.goal_point = msg.pose.position # Point object
 
@@ -204,9 +216,13 @@ class PathPlan(object):
 
             # we don't want any points outside of the occupancy bounds but that probably won't happen?
             # TODO
+            _u = np.clip(check_points[:, 0], 0, self.u_max).reshape(-1,1) # u
+            _v = np.clip(check_points[:, 1], 0, self.v_max).reshape(-1,1) # v
+
+            true_check_points = np.hstack((_u, _v))
 
             # I couldn't figure out how to use numpy indexing/slicing so using a for loop 0.0
-            for p in check_points.tolist():
+            for p in true_check_points.tolist():
                 # access the occupancy grid and pull out the values
                 occ_val = map[p[0], p[1]]
 
@@ -253,10 +269,15 @@ class PathPlan(object):
                 break
 
             # Create children from that last point; treat points as indices in the map
-            children = last_point + step_size * adjacent_squares            
+            children = last_point + step_size * adjacent_squares
+
+            _u = np.clip(children[:, 0], 0, self.u_max).reshape(-1,1) # u
+            _v = np.clip(children[:, 1], 0, self.v_max).reshape(-1,1) # v
+
+            true_check_points = np.hstack((_u, _v))          
 
             # Prune collisions, update costs, and add to the agenda
-            for c in children:
+            for c in true_check_points:
                 if not in_collision(c):
                     # we can update cost and add it to the agenda
                     tup_vers = (c[0], c[1])
