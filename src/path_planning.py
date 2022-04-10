@@ -7,6 +7,9 @@ from nav_msgs.msg import Odometry, OccupancyGrid
 import rospkg
 import time, os
 from utils import LineTrajectory
+import skimage
+from skimage import morphology
+from skimage.morphology import disk
 
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
@@ -73,9 +76,18 @@ class PathPlan(object):
 
 
     def map_cb(self, msg):
-
         # Store all of the map data into instance variables
         self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+        
+        
+        #Here, values are -1, 0, or 100, 
+        #Dilates image for use
+        self.occ_map = self.occ_map / 100  * 255 
+        dilation = skimage.morphology.dilation(self.occ_map, disk(8))
+        dilation = dilation /255 * 100
+        self.occ_map = dilation
+
+
         mo = msg.info.origin.orientation
 
         self.resolution = msg.info.resolution
