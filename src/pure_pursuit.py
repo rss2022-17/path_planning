@@ -52,7 +52,7 @@ class PurePursuit(object):
             v = points[i]
             w = points[i+1]
 
-            l2 = np.pow(np.linalg.norm(v-w), 2)
+            l2 = np.power(np.linalg.norm(v-w), 2)
             t = ((car_point[0]-v[0])*(w[0]-v[0]) + (car_point[1]-v[1])*(w[1]-v[1]))/l2
             t = np.max((0, np.min((1,t))))
             close_point = np.array([v[0] + t*(w[0]-v[0]), v[1] + t*(w[1]-v[1])])
