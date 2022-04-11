@@ -314,11 +314,12 @@ class PathPlan(object):
             if tup_vers in visited: continue
             visited.add(tup_vers)
 
-            # visualize the current point we're considering
-            x, y = self.convert_pixels_to_x(last_point)
-            current_pose.pose.position.x = x
-            current_pose.pose.position.y = y
-            self.pose_pub.publish(current_pose)
+            if self.pose_pub.get_num_connections() > 0:
+                # visualize the current point we're considering
+                x, y = self.convert_pixels_to_x(last_point)
+                current_pose.pose.position.x = x
+                current_pose.pose.position.y = y
+                self.pose_pub.publish(current_pose)
 
 
             if np.linalg.norm(last_point - end_point) <= step_size:
