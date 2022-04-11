@@ -130,7 +130,7 @@ class PathPlan(object):
 
 
     def goal_cb(self, msg):
-        if self.occ_map is False: return
+        if self.mapIsDone is False: return
 
         self.goal_point = msg.pose.position # Point object
 
