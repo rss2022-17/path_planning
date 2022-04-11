@@ -11,6 +11,7 @@ from utils import LineTrajectory
 
 class Graph:
     ''' Tree graph that is being generated '''
+    ''' all data in the form of a TUPLE '''
     def __init__(self,start_point,end_point, x_min, x_max, y_min, y_max):
         self.start_point = start_point
         self.end_point = end_point
@@ -27,14 +28,14 @@ class Graph:
         rand_x = np.random.randint(self.x_min, self.x_max+1)
         rand_y = np.random.randint(self.y_min, self.y_max+1)
 
-        return np.array([[rand_y, rand_x]])
+        return (rand_y, rand_x)
     
     def nearest(self, new_point):
         min_dist = float('inf')
         min_point = None
 
         for point in self.adjacency.keys():
-            dist = np.linalg.norm(new_point - point)
+            dist = np.linalg.norm(np.asarray(new_point) - np.asarray(point))
             if dist < min_dist:
                 min_dist = dist
                 min_point = point
@@ -93,7 +94,7 @@ class PathPlan(object):
         start_point -= self.map_position
         start_point /= self.resolution
 
-        self.start_point = start_point
+        self.start_point = (start_point[0,0], start_point[0,1])
 
     def goal_cb(self, msg):
         if self.occ_map is None: return
@@ -108,6 +109,7 @@ class PathPlan(object):
         end_point -= self.map_position
         end_point /= self.resolution
 
+        end_point = (end_point[0,0], end_point[0,1])
 
         # if we're setting the goal, we should already have a start point so plan the path!
         self.plan_path(self.start_point, end_point, self.occ_map)
@@ -121,25 +123,25 @@ class PathPlan(object):
         return False
     
     def through_obstacle(self,point_1, point_2):
-        m = (point_1[0,0] - point_2[0,0])/(point_1[0,1] - point_2[0,1])
+        m = (point_1[0] - point_2[0])/(point_1[1] - point_2[1])
 
         # y = mx + b --> y - mx = b
 
-        b = point_1[0,0] - m * point_1[0,1]
+        b = point_1[0] - m * point_1[1]
 
-        start = min(point_1[0,1], point_2[0,1])
-        stop = max(point_1[0,1], point_2[0,1])
+        start = min(point_1[1], point_2[1])
+        stop = max(point_1[1], point_2[1])
 
         for x in range(np.ceil(start), stop):
             y = m*x + b
-            point = np.array([[y, x]])
+            point = (y, x)
             if self.in_obstacle(point):
                 return True
         return False
 
     def goal(self, point):
         threshold = 2
-        dist = np.linalg.norm(point - self.end_point)
+        dist = np.linalg.norm(np.asarray(point) - np.asarray(self.end_point))
         if dist < threshold:
             return True
         return False
@@ -175,11 +177,11 @@ class PathPlan(object):
         # trace back
         
         reached_start = False
-        current_node = end_point
-        path.append(end_point)
+        current_node = G.end_point
+        path.append(np.array([[G.end_point[0],G.end_point[1]]]))
         while not reached_start:
             current_parent = G.parents[current_node]
-            path.append(current_parent)
+            path.append(np.array([[current_parent[0],current_parent[1]]]))
             current_node = current_parent
 
             if current_parent == G.start_point:
@@ -196,9 +198,9 @@ class PathPlan(object):
         G = Graph(start_point, end_point, self.map_position[0,1]/self.resolution, self.occ_map.shape[1]/self.resolution, self.map_position[0,0]/self.resolution, self.occ_map.shape[0]/self.resolution)
         
         # get RRT graph !!!
-        end_point, path_graph = self.rrt(G)
+        closest_end_point, path_graph = self.rrt(G)
 
-        if end_point is None:
+        if closest_end_point is None:
             rospy.loginfo("Path not found between the given start and goal poses! :(")
         
         else:
