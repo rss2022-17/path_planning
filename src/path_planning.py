@@ -7,9 +7,17 @@ from nav_msgs.msg import Odometry, OccupancyGrid
 import rospkg
 import time, os
 from utils import LineTrajectory
-import skimage
-from skimage import morphology
-from skimage.morphology import disk
+
+try:
+    import skimage
+    from skimage import morphology
+    from skimage.morphology import disk
+    skimage_imported = True
+except ImportError:
+    print("Skimage could not be imported :(")
+    skimage_imported = False
+
+from scipy.misc import imread
 
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
@@ -25,12 +33,16 @@ class PathPlan(object):
 
         self.pose_pub = rospy.Publisher("/planning/popped_pose", PoseStamped, queue_size=10)
 
-        self.occupancy_cutoff = 0.8
+        self.occupancy_cutoff = 0.5
         self.occ_map = None
 
         self.save_trajs = False
         self.num_paths_made = 0
         self.mapIsDone = False
+        self.eroded_map_exists = False
+
+        self.eroded_map_path = "/home/racecar/racecar_ws/src/path_planning/maps/erosion_stata.png"
+        self.eroded_map_exists = os.path.exists(self.eroded_map_path)
 
 
     def quaternion_rotation_matrix(self, Q):
@@ -78,15 +90,39 @@ class PathPlan(object):
 
     def map_cb(self, msg):
         # Store all of the map data into instance variables
-        self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
-        
-        
-        #Here, values are -1, 0, or 100, 
-        #Dilates image for use
-        self.occ_map = self.occ_map / 100  * 255 
-        dilation = skimage.morphology.dilation(self.occ_map, disk(7))
-        dilation = dilation /255 * 100
-        self.occ_map = dilation
+
+        if self.eroded_map_exists:
+            rospy.loginfo("Found eroded map in file system! Using this as our occupancy grid")
+
+            im = imread(self.eroded_map_path, flatten=True)
+            print("Image shape: "+str(im.shape))
+            print(im[:200,:200])
+
+            self.im = im
+            self.occ_map = np.where(im < 50, 1, 0) # if the pixels are dark, it should be treated as 1
+
+            # self.occ_map = im
+
+            print("image at [1000:1025, 490:515]")
+            print(im[1000:1025, 490:515])
+
+            rospy.loginfo("Occ map is in collision: "+str(np.nonzero(self.occ_map - 1))) # what's dark?
+
+            print("Image value at [251, 563]: "+str(self.occ_map[251, 563]))
+
+        elif skimage_imported:
+            rospy.loginfo("Using skimage to dilate map!")
+            self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+            
+            
+            #Here, values are -1, 0, or 100, 
+            #Dilates image for use
+            self.occ_map = self.occ_map / 100  * 255 
+            dilation = skimage.morphology.dilation(self.occ_map, disk(7))
+            dilation = dilation /255 * 100
+            self.occ_map = dilation
+        else:
+            self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
 
 
         mo = msg.info.origin.orientation
@@ -126,7 +162,11 @@ class PathPlan(object):
         # # swap x, y then convert to u, v
         # start_point = (np.array([[y, x]]) - self.map_position) / self.resolution
 
+        
+
         self.start_point = np.array([self.convert_x_to_pixels(np_start)])
+
+        # rospy.loginfo("Scipy IM values at odom: "+str(self.occ_map[int(self.start_point[0,0]), int(self.start_point[0,1])]))
 
 
     def goal_cb(self, msg):
@@ -194,7 +234,7 @@ class PathPlan(object):
         self.trajectory.clear()
         rospy.loginfo("Starting path planning!!")
 
-        step_size = rospy.get_param("/lab6/step_size", 3)
+        step_size = rospy.get_param("/lab6/step_size", 9)
         rospy.loginfo("Using step size of "+str(step_size)+" from parameter: /lab6/step_size")
 
         # Initialize here so we can reuse it
@@ -223,8 +263,12 @@ class PathPlan(object):
             for p in check_points.tolist():
                 # access the occupancy grid and pull out the values
                 occ_val = map[p[0], p[1]]
+                
+                print("\tLocation: "+str(p)+"; image value: "+str(self.im[p[0], p[1]]))
 
                 if occ_val > self.occupancy_cutoff:
+                    print("We found a collision!!!")
+                    print("\tLocation: "+str(p)+"; image value: "+str(self.im[p[0], p[1]]))
                     # if we detect _any_ collision, stop early
                     return True
 
