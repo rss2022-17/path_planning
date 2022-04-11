@@ -54,15 +54,15 @@ class PathPlan(object):
     current car pose.
     """
     def __init__(self):
+        self.occupancy_cutoff = 0.8
+        self.occ_map = None
+
         self.odom_topic = rospy.get_param("~odom_topic")
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
         self.trajectory = LineTrajectory("/planned_trajectory")
         self.goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_cb, queue_size=10)
         self.traj_pub = rospy.Publisher("/trajectory/current", PoseArray, queue_size=10)
         self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
-
-        self.occupancy_cutoff = 0.8
-        self.occ_map = None
 
     def map_cb(self, msg):
 
@@ -116,7 +116,7 @@ class PathPlan(object):
 
     def in_obstacle(self,point):
         # collision square?
-        occ_val = map[point[0],point[1]]
+        occ_val = self.occ_map[point[0],point[1]]
         
         if occ_val > self.occupancy_cutoff:
             return True
@@ -154,6 +154,7 @@ class PathPlan(object):
 
         while counter < lim:
             new_point = G.random_position()
+            print(new_point)
 
             if self.in_obstacle(new_point):
                 continue
