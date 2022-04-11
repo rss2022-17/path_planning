@@ -15,7 +15,7 @@ class PurePursuit(object):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
     """
     def __init__(self):
-        self.odom_topic       = rospy.get_param("~odom_topic")
+      #        self.odom_topic       = rospy.get_param("~odom_topic")
         self.lookahead        = 0.5
         self.speed            = 1
         #self.wrap             = # FILL IN #
@@ -40,6 +40,7 @@ class PurePursuit(object):
         car_point = np.array([car_x,car_y])
         points = np.array(self.trajectory.points)
 
+        rospy.loginfo(len(points))
         if points.shape == (0,):
             return # there is no trajectory so don't run it
             
@@ -47,17 +48,15 @@ class PurePursuit(object):
         # print(points.shape) 
         #step 2, find path point closest to vehicle
         #TODO: Update this to look at intermediate points on trajectory
-        distances = np.zeros(len(points-1))
+        distances = np.ones(len(points-1))*9e9
         for i in range(len(points)-1):
             v = points[i]
             w = points[i+1]
-
-            l2 = np.power(np.linalg.norm(v-w), 2)
+            l2 = np.linalg.norm(v-w)**2
             t = ((car_point[0]-v[0])*(w[0]-v[0]) + (car_point[1]-v[1])*(w[1]-v[1]))/l2
             t = np.max((0, np.min((1,t))))
             close_point = np.array([v[0] + t*(w[0]-v[0]), v[1] + t*(w[1]-v[1])])
-            distances[i] = (np.linalg.norm(car_point-close_point))
-
+            distances[i] = np.linalg.norm(car_point-close_point)
 
 
 
