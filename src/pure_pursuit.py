@@ -6,7 +6,7 @@ import time
 import utils
 import tf
 
-from geometry_msgs.msg import PoseArray, PoseStamped
+from geometry_msgs.msg import PoseArray, PoseStamped, Point
 from visualization_msgs.msg import Marker
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
@@ -15,16 +15,19 @@ class PurePursuit(object):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
     """
     def __init__(self):
-        self.odom_topic       = rospy.get_param("~odom_topic")
+      #        self.odom_topic       = rospy.get_param("~odom_topic")
         self.lookahead        = 0.5
-        self.speed            = 1
+        self.speed            = 2
         #self.wrap             = # FILL IN #
         self.wheelbase_length = 0.32#
+        self.shutdown_threshold = 0.3 #if off by then stop
         self.trajectory  = utils.LineTrajectory("/followed_trajectory")
         self.traj_sub = rospy.Subscriber("/trajectory/current", PoseArray, self.trajectory_callback, queue_size=1)
         self.drive_pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
+        self.lookahead_pub = rospy.Publisher("/lookahead_point", Point, queue_size=1)
+        self.odom_sub = rospy.Subscriber("/pf/pose/odom", Odometry, self.odom_callback, queue_size=1)
 
-        self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_callback, queue_size=1)
+
 
     def trajectory_callback(self, msg):
         ''' Clears the currently followed trajectory, and loads the new one from the message
@@ -40,20 +43,41 @@ class PurePursuit(object):
         car_point = np.array([car_x,car_y])
         points = np.array(self.trajectory.points)
 
+        rospy.loginfo(len(points))
         if points.shape == (0,):
             return # there is no trajectory so don't run it
             
         # print(car_point.shape) 
         # print(points.shape) 
         #step 2, find path point closest to vehicle
-        #TODO: Update this to look at intermediate points on trajectory
-        distances = np.linalg.norm(points-np.tile(car_point, (len(self.trajectory.distances),1)))
+        distances = np.ones(len(points-1))*9e9
+        for i in range(len(points)-1):
+            v = points[i]
+            w = points[i+1]
+            l2 = np.linalg.norm(v-w)**2
+            t = ((car_point[0]-v[0])*(w[0]-v[0]) + (car_point[1]-v[1])*(w[1]-v[1]))/l2
+            t = np.max((0, np.min((1,t))))
+            close_point = np.array([v[0] + t*(w[0]-v[0]), v[1] + t*(w[1]-v[1])])
+            distances[i] = np.linalg.norm(car_point-close_point)
+
+
+
+        #distances = np.linalg.norm(points-np.tile(car_point, (len(self.trajectory.distances),1)))
+
         #for points in points:
         #    distances.append(np.norm(point-car_point)) #((point[0]-car_x)**2 +  (point[1]-car_y)**2)**0.5)
         min_ind = np.argmin(distances) 
         min_point = points[min_ind]
         min_point_dist = self.trajectory.distance_along_trajectory(min_ind)
         
+        if distances[min_ind] > self.shutdown_threshold:
+            drive_cmd = AckermannDriveStamped()
+            drive_cmd.header.stamp = rospy.Time.now()
+            drive_cmd.header.frame_id = "/base_link_pf"
+            drive_cmd.drive.steering_angle = 0
+            drive_cmd.drive.speed = 0
+            self.drive_pub.publish(drive_cmd)
+            return
 
 
         #step 3, find goal point
@@ -89,6 +113,11 @@ class PurePursuit(object):
             return
 
         goal = intersecting_points[-1] #take last added point (furthest along path)
+        goal_msg = Point()
+        goal_msg.x=goal[0]
+        goal_msg.y=goal[1]
+        goal_msg.z=0
+        self.lookahead_pub.publish(goal_msg)
         
         #step 4, Transform the goal point to vehicle coordinates
         rot_mat = tf.transformations.quaternion_matrix((msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w))
