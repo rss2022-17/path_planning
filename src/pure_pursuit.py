@@ -17,10 +17,10 @@ class PurePursuit(object):
     def __init__(self):
         self.odom_topic       = rospy.get_param("~odom_topic")
         self.lookahead        = 1
-        self.speed            = 2
+        self.speed            = 1.5
         #self.wrap             = # FILL IN #
         self.wheelbase_length = 0.32#
-        self.shutdown_threshold = 0.3 #if off by then stop
+        self.shutdown_threshold = 10 #if off by then stop
         self.trajectory  = utils.LineTrajectory("/followed_trajectory")
         self.traj_sub = rospy.Subscriber("/trajectory/current", PoseArray, self.trajectory_callback, queue_size=1)
         self.drive_pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
@@ -98,9 +98,9 @@ class PurePursuit(object):
             t2 = (-b - sqrt_disc)/(2.0*a)
 
             if t1<1 and t1>0: #t1 is necessarily further along the path, and should take precedence over t2
-                intersecting_points.append(P1 + t1*(V-P1))
+                intersecting_points.append(P1 + t1*V)
             elif t2<1 and t2>0:
-                intersecting_points.append(P1 + t2*(V-P1))
+                intersecting_points.append(P1 + t2*V)
         #TODO: figure out how to pick which point is the goal
 
         if not intersecting_points:
