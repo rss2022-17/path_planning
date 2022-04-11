@@ -16,7 +16,7 @@ class PurePursuit(object):
     """
     def __init__(self):
         self.odom_topic       = rospy.get_param("~odom_topic")
-        self.lookahead        = 10.0
+        self.lookahead        = 1.0
         self.speed            = 1
         #self.wrap             = # FILL IN #
         self.wheelbase_length = 0.32#
@@ -46,9 +46,9 @@ class PurePursuit(object):
             v = points[i]
             w = points[i+1]
 
-            l2 = np.linalg.norm(v-w)
+            l2 = np.pow(np.linalg.norm(v-w), 2)
             t = ((car_point[0]-v[0])*(w[0]-v[0]) + (car_point[1]-v[1])*(w[1]-v[1]))/l2
-            t = np.max(0, np.min(1,t))
+            t = np.max((0, np.min((1,t))))
             close_point = np.array([v[0] + t*(w[0]-v[0]), v[1] + t*(w[1]-v[1])])
             distances[i] = (np.linalg.norm(car_point-close_point))
 
