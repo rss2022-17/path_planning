@@ -30,6 +30,7 @@ class PathPlan(object):
 
         self.save_trajs = False
         self.num_paths_made = 0
+        self.mapIsDone = False
 
 
     def quaternion_rotation_matrix(self, Q):
@@ -83,7 +84,7 @@ class PathPlan(object):
         #Here, values are -1, 0, or 100, 
         #Dilates image for use
         self.occ_map = self.occ_map / 100  * 255 
-        dilation = skimage.morphology.dilation(self.occ_map, disk(8))
+        dilation = skimage.morphology.dilation(self.occ_map, disk(7))
         dilation = dilation /255 * 100
         self.occ_map = dilation
 
@@ -110,12 +111,13 @@ class PathPlan(object):
         rospy.loginfo("map rotation matrix:\n"+str(self.map_rot_mat))
 
         rospy.loginfo("nonzero indices in map: "+str(np.nonzero(self.occ_map)))
+        self.mapIsDone = True
 
     def odom_cb(self, msg):
         start_pt = msg.pose.pose.position # Point object
 
         # if the map isn't set, we can't use it to initialize start points
-        if self.occ_map is None: return
+        if self.mapIsDone is False: return
 
         np_start = np.array([[start_pt.x, start_pt.y]])
         # x = start_pt.x
@@ -128,7 +130,7 @@ class PathPlan(object):
 
 
     def goal_cb(self, msg):
-        if self.occ_map is None: return
+        if self.occ_map is False: return
 
         self.goal_point = msg.pose.position # Point object
 
