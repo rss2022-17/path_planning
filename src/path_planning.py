@@ -26,7 +26,7 @@ class PathPlan(object):
         self.sample_range = 200
         self.max_dist = 20
         self.path_step = 2
-        self.num_steps = 400 # can be set as a parameter
+        self.num_steps = 1500 # can be set as a parameter
         self.end_point_dst_param = 20 # can be set as a parameter
 
     def xy2uv(self, x, y):
@@ -161,11 +161,17 @@ class PathPlan(object):
                 elif dist_from_end < center_to_end:
                     center = rand_node
                     center_to_end = dist_from_end
+            
+            if i % 100 == 0:
+                rospy.loginfo("Still running. We've searched along "+str(i)+ " steps")
+
         # if no path exists within num_steps, return empty list as unsuccessful
+        rospy.loginfo("Couldn't find a path within "+str(self.num_steps)+" steps")
         return []
 
     def plan_path(self, start_point, end_point, map):
         ## CODE FOR PATH PLANNING ##
+        self.trajectory.clear()
         path = self.rrt(self.xy2uv(*start_point), self.xy2uv(*end_point), map)
         # each node is converted back to map coordinates for trajectory
         for p in path:
