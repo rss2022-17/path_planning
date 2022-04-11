@@ -17,13 +17,36 @@ except ImportError:
     print("Skimage could not be imported :(")
     skimage_imported = False
 
-from scipy.misc import imread
+from scipy.misc import imread, imsave
 
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
     current car pose.
     """
     def __init__(self):
+        ### INITIALIZE ALL CHECK VARIABLES BEFORE SUB/PUB
+        
+        self.occupancy_cutoff = 0.8 * 100 # this is probably wrong tbh. It looks like occupancy scales from 0 to 100
+        self.occ_map = None
+
+        self.save_trajs = False
+        self.num_paths_made = 0
+        self.mapIsDone = False
+        self.eroded_map_exists = False
+        
+        self.eroded_map_path = "/home/racecar/racecar_ws/src/path_planning/maps/BAD_IMAGE.png"
+        try:
+            rp = rospkg.RosPack()
+            self.lab6_path = rp.get_path("lab6")
+            self.eroded_map_path = self.lab6_path + "/maps/erosion_stata.png"
+
+            rospy.loginfo("Lab6 path is: "+str(self.lab6_path))
+            rospy.loginfo("Eroded map path is: "+str(self.eroded_map_path))
+        except rospkg.ResourceNotFound:
+            rospy.loginfo("Could not get path to lab6")
+        
+        self.eroded_map_exists = os.path.exists(self.eroded_map_path)
+
         self.odom_topic = rospy.get_param("~odom_topic")
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
         self.trajectory = LineTrajectory("/planned_trajectory")
@@ -33,16 +56,7 @@ class PathPlan(object):
 
         self.pose_pub = rospy.Publisher("/planning/popped_pose", PoseStamped, queue_size=10)
 
-        self.occupancy_cutoff = 0.5
-        self.occ_map = None
 
-        self.save_trajs = False
-        self.num_paths_made = 0
-        self.mapIsDone = False
-        self.eroded_map_exists = False
-
-        self.eroded_map_path = "/home/racecar/racecar_ws/src/path_planning/maps/erosion_stata.png"
-        self.eroded_map_exists = os.path.exists(self.eroded_map_path)
 
 
     def quaternion_rotation_matrix(self, Q):
@@ -90,25 +104,17 @@ class PathPlan(object):
 
     def map_cb(self, msg):
         # Store all of the map data into instance variables
-
         if self.eroded_map_exists:
             rospy.loginfo("Found eroded map in file system! Using this as our occupancy grid")
 
             im = imread(self.eroded_map_path, flatten=True)
-            print("Image shape: "+str(im.shape))
-            print(im[:200,:200])
 
             self.im = im
-            self.occ_map = np.where(im < 50, 1, 0) # if the pixels are dark, it should be treated as 1
+            self.occ_map = (1 - np.true_divide(im, 255.0)) * 100.0 # convert 255 brightness scale to 100 darkness scale
+            self.occ_map = np.flip(self.occ_map, axis=0) # occ grid is actually flipped vertically
 
-            # self.occ_map = im
-
-            print("image at [1000:1025, 490:515]")
-            print(im[1000:1025, 490:515])
-
-            rospy.loginfo("Occ map is in collision: "+str(np.nonzero(self.occ_map - 1))) # what's dark?
-
-            print("Image value at [251, 563]: "+str(self.occ_map[251, 563]))
+            # what does our determined occ grid look like?
+            # imsave("/home/racecar/racecar_ws/src/path_planning/maps/test_erosion_stata.png", (np.true_divide(self.occ_map, 100.0) * 255.0))
 
         elif skimage_imported:
             rospy.loginfo("Using skimage to dilate map!")
@@ -122,6 +128,7 @@ class PathPlan(object):
             dilation = dilation /255 * 100
             self.occ_map = dilation
         else:
+            rospy.loginfo("Could not find eroded map or skimage package at path: "+self.eroded_map_path+"\n\t. Using standard occ grid")
             self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
 
 
@@ -141,6 +148,7 @@ class PathPlan(object):
 
         rospy.loginfo("map initialized!!")
         rospy.loginfo("map shape: "+str(self.occ_map.shape))
+        rospy.loginfo("true map shape: "+str((msg.info.height, msg.info.width)))
         rospy.loginfo("map resolution: "+str(self.resolution))
         rospy.loginfo("map orientation: "+str(self.map_orientation))
         rospy.loginfo("map position: "+str(self.map_position))
@@ -234,7 +242,7 @@ class PathPlan(object):
         self.trajectory.clear()
         rospy.loginfo("Starting path planning!!")
 
-        step_size = rospy.get_param("/lab6/step_size", 9)
+        step_size = rospy.get_param("/lab6/step_size", 3)
         rospy.loginfo("Using step size of "+str(step_size)+" from parameter: /lab6/step_size")
 
         # Initialize here so we can reuse it
@@ -263,13 +271,9 @@ class PathPlan(object):
             for p in check_points.tolist():
                 # access the occupancy grid and pull out the values
                 occ_val = map[p[0], p[1]]
-                
-                print("\tLocation: "+str(p)+"; image value: "+str(self.im[p[0], p[1]]))
 
-                if occ_val > self.occupancy_cutoff:
-                    print("We found a collision!!!")
-                    print("\tLocation: "+str(p)+"; image value: "+str(self.im[p[0], p[1]]))
-                    # if we detect _any_ collision, stop early
+                if occ_val > self.occupancy_cutoff: # high numbers should be treated as a collision
+                    # print("We found a collision!!!")
                     return True
 
             return False
