@@ -6,7 +6,7 @@ import time
 import utils
 import tf
 
-from geometry_msgs.msg import PoseArray, PoseStamped, Point
+from geometry_msgs.msg import PoseArray, PoseStamped, Point, PointStamped
 from visualization_msgs.msg import Marker
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
@@ -20,11 +20,11 @@ class PurePursuit(object):
         self.speed            = 1.5
         #self.wrap             = # FILL IN #
         self.wheelbase_length = 0.32#
-        self.shutdown_threshold = 10 #if off by then stop
+        self.shutdown_threshold = 5 #if off by then stop
         self.trajectory  = utils.LineTrajectory("/followed_trajectory")
         self.traj_sub = rospy.Subscriber("/trajectory/current", PoseArray, self.trajectory_callback, queue_size=1)
         self.drive_pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
-        self.lookahead_pub = rospy.Publisher("/lookahead_point", Point, queue_size=1)
+        self.lookahead_pub = rospy.Publisher("/lookahead_point", PointStamped, queue_size=1)
         self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_callback, queue_size=1)
 
 
@@ -113,10 +113,15 @@ class PurePursuit(object):
             return
 
         goal = intersecting_points[-1] #take last added point (furthest along path)
-        goal_msg = Point()
-        goal_msg.x=goal[0]
-        goal_msg.y=goal[1]
-        goal_msg.z=0
+
+        goal_msg = PointStamped()
+        goal_msg.header.stamp = rospy.Time.now()
+        goal_msg.header.frame_id = "map"
+
+        goal_msg.point = Point()
+        goal_msg.point.x=goal[0]
+        goal_msg.point.y=goal[1]
+        goal_msg.point.z=0
         self.lookahead_pub.publish(goal_msg)
         
         #step 4, Transform the goal point to vehicle coordinates
