@@ -1,24 +1,32 @@
 #!/usr/bin/env python2
 import numpy as np
 import rospy
+import sys
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Pose
 
 if __name__ == "__main__":
     rospy.init_node("autogoalset")
 
+    
     #Initialize test cases
     test_cases = dict()
-    test_cases["straight_path1"] = [(-3.2, -1.588),(-30.578, -.599)]
+    test_cases["straight_path1"] = [(-3.2, -.599),(-30.578, -.599)]
     test_cases["hallway_turn1"] = [(-3.2, -1.588), (-14.527, 11.937)]
     test_cases["hallway_turn2"] = [(-30.578, -.599), (-10.491, 16.034)]
     
-    
+
     startpub  = rospy.Publisher("/initialpose", PoseWithCovarianceStamped, queue_size = 10)
     goalpub= rospy.Publisher("/move_base_simple/goal", PoseStamped, queue_size = 10)
 
 
-    test_case = test_cases["straight_path1"]
+    test_case_name = "default"
+    if len(sys.argv) > 1:
+        test_case_name = sys.argv[1]
+    else:
+        test_case_name = "straight_path1" #Change if necessary
+
+    test_case = test_cases[test_case_name]
 
 
 
