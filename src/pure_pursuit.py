@@ -10,14 +10,15 @@ from geometry_msgs.msg import PoseArray, PoseStamped, Point, PointStamped
 from visualization_msgs.msg import Marker
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Float64
 
 class PurePursuit(object):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
     """
     def __init__(self):
         self.odom_topic       = rospy.get_param("~odom_topic")
-        self.lookahead        = 1
-        self.speed            = 1.5
+        self.lookahead        = 2
+        self.speed            = 2
         #self.wrap             = # FILL IN #
         self.wheelbase_length = 0.32#
         self.shutdown_threshold = 5 #if off by then stop
@@ -25,6 +26,7 @@ class PurePursuit(object):
         self.traj_sub = rospy.Subscriber("/trajectory/current", PoseArray, self.trajectory_callback, queue_size=1)
         self.drive_pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
         self.lookahead_pub = rospy.Publisher("/lookahead_point", PointStamped, queue_size=1)
+        self.error_pub = rospy.Publisher("/pp/error", Float64, queue_size=1)
         self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_callback, queue_size=1)
 
 
@@ -69,6 +71,12 @@ class PurePursuit(object):
         min_ind = np.argmin(distances) 
         min_point = points[min_ind]
         min_point_dist = self.trajectory.distance_along_trajectory(min_ind)
+
+        err_msg = Float64()
+        err_msg.data= distances[min_ind]
+        self.error_pub.publish(err_msg)
+        
+        
         
         if distances[min_ind] > self.shutdown_threshold:
             drive_cmd = AckermannDriveStamped()
@@ -83,7 +91,7 @@ class PurePursuit(object):
         #step 3, find goal point
         intersecting_points = []
         Q = [car_x, car_y]
-        r = self.lookahead
+        r = max(0.5, self.speed*0.5) #self.lookahead
         for i in range(min_ind, len(points)-1): #-1 because we're looking at segments between points
             P1 = points[i]
             V = points[i+1]-P1
