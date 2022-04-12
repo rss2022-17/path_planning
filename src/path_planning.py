@@ -16,18 +16,23 @@ class PathPlan(object):
     current car pose.
     """
     def __init__(self):
-        self.odom_topic = rospy.get_param("~odom_topic", "/odom")
-        self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
-        self.trajectory = LineTrajectory("/planned_trajectory")
-        self.goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_cb, queue_size=10)
-        self.traj_pub = rospy.Publisher("/trajectory/current", PoseArray, queue_size=10)
-        self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
         self.goal_sample = 5
         self.sample_range = 200
         self.max_dist = 20
         self.path_step = 2
         self.num_steps = 1500 # can be set as a parameter
         self.end_point_dst_param = 20 # can be set as a parameter
+
+        self.start_time = 0
+        self.time_to_plan = 0
+
+        self.odom_topic = rospy.get_param("~odom_topic", "/odom")
+        self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
+        self.trajectory = LineTrajectory("/planned_trajectory")
+        self.goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_cb, queue_size=10)
+        self.traj_pub = rospy.Publisher("/trajectory/current", PoseArray, queue_size=10)
+        self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
+
 
     def xy2uv(self, x, y):
         # translates an x, y coordinate to u, v
@@ -58,6 +63,7 @@ class PathPlan(object):
     def goal_cb(self, msg):
         # sets goal position
         self.end = (msg.pose.position.x, msg.pose.position.y)
+        self.start_time = rospy.get_time()
         self.plan_path(self.start, self.end, self.map_cell_2d)
 
     class Node:
@@ -124,12 +130,15 @@ class PathPlan(object):
     def final_path(self, node):
         # given node, finds a path back to starting node through parent
         # start node has no parent :(
+        self.time_to_plan = rospy.get_time() - self.start_time
+        
         path = [node.p]
         n = node.parent
         while n is not None:
             path.append(n.p)
             n = n.parent
         path.reverse()
+
         return path
 
     def rrt(self, start_point, end_point, map):
@@ -174,9 +183,22 @@ class PathPlan(object):
         self.trajectory.clear()
         path = self.rrt(self.xy2uv(*start_point), self.xy2uv(*end_point), map)
         # each node is converted back to map coordinates for trajectory
+        path_length = 0
+        _x, _y = None, None
         for p in path:
             x, y = self.uv2xy(*p)
+
+            if _x is not None: # we're not at the start
+                path_length += np.linalg.norm(np.array([_x, _y]) - np.array([x, y]))
+
+            _x, _y = x, y
             self.trajectory.addPoint(Point(x, y, 0))
+
+        rospy.loginfo("Found path with length of: "+str(round(path_length, 2)) + " m")
+        rospy.loginfo("Found path in: "+str(round(self.time_to_plan, 4))+ " s")
+
+        self.time_to_plan = 0
+
         # publish trajectory
         self.traj_pub.publish(self.trajectory.toPoseArray())
 
