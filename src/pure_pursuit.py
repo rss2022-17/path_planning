@@ -86,7 +86,7 @@ class PurePursuit(object):
         r = self.lookahead
         for i in range(min_ind, len(points)-1): #-1 because we're looking at segments between points
             P1 = points[i]
-            V = points[i+1]
+            V = points[i+1]-P1
             a = np.dot(V,V)
             b = 2* np.dot(V, P1-Q)
             c = np.dot(P1, P1) + np.dot(Q,Q) - 2*np.dot(P1, Q) - r**2
