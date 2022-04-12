@@ -1,0 +1,11 @@
+<launch>
+    <include file = "$(find localization)/launch/localize_real_env.launch"/>
+    <node pkg="lab6" type="pure_pursuit.py" name="Trajectory_follower">
+		<param name="odom_topic" value="/pf/pose/odom"/>
+	</node>
+	<node pkg="lab6" type="path_planning.py" name="Trajectory_planner" output="screen">
+		<param name="odom_topic" value="/pf/pose/odom"/>
+	</node>
+	<node pkg="wall_follower" type="safety_controller.py" name="safety_controller">
+	</node>
+</launch>
