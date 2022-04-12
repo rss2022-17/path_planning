@@ -8,11 +8,50 @@ import rospkg
 import time, os
 from utils import LineTrajectory
 
+try:
+    import skimage
+    from skimage import morphology
+    from skimage.morphology import disk
+    skimage_imported = True
+except ImportError:
+    print("Skimage could not be imported :(")
+    skimage_imported = False
+
+from scipy.misc import imread, imsave
+
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
     current car pose.
     """
     def __init__(self):
+        ### INITIALIZE ALL CHECK VARIABLES BEFORE SUB/PUB
+        
+        self.occupancy_cutoff = 0.8 * 100 # this is probably wrong tbh. It looks like occupancy scales from 0 to 100
+        self.start_point = None
+        self.goal_point = None
+        self.occ_map = None
+
+        self.save_trajs = False
+        self.num_paths_made = 0
+        self.mapIsDone = False
+        self.eroded_map_exists = False
+        
+        self.eroded_map_path = "/home/racecar/racecar_ws/src/path_planning/maps/BAD_IMAGE.png"
+        try:
+            rp = rospkg.RosPack()
+            self.lab6_path = rp.get_path("lab6")
+            self.eroded_map_path = self.lab6_path + "/maps/erosion_stata.png"
+
+            rospy.loginfo("Lab6 path is: "+str(self.lab6_path))
+            rospy.loginfo("Eroded map path is: "+str(self.eroded_map_path))
+        except rospkg.ResourceNotFound:
+            rospy.loginfo("Could not get path to lab6")
+        
+        self.eroded_map_exists = os.path.exists(self.eroded_map_path)
+
+        self.start_time = 0
+        self.time_to_plan = 0
+
         self.odom_topic = rospy.get_param("~odom_topic")
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
         self.trajectory = LineTrajectory("/planned_trajectory")
@@ -21,12 +60,6 @@ class PathPlan(object):
         self.odom_sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb)
 
         self.pose_pub = rospy.Publisher("/planning/popped_pose", PoseStamped, queue_size=10)
-
-        self.occupancy_cutoff = 0.8
-        self.occ_map = None
-
-        self.save_trajs = False
-        self.num_paths_made = 0
 
 
     def quaternion_rotation_matrix(self, Q):
@@ -73,9 +106,39 @@ class PathPlan(object):
 
 
     def map_cb(self, msg):
-
         # Store all of the map data into instance variables
-        self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+        if self.eroded_map_exists:
+            rospy.loginfo("Found eroded map in file system! Using this as our occupancy grid")
+
+            im = imread(self.eroded_map_path, flatten=True)
+
+            self.im = im
+            self.occ_map = (1 - np.true_divide(im, 255.0)) * 100.0 # convert 255 brightness scale to 100 darkness scale
+            self.occ_map = np.flip(self.occ_map, axis=0) # occ grid is actually flipped vertically
+
+            # what does our determined occ grid look like?
+            # imsave("/home/racecar/racecar_ws/src/path_planning/maps/test_erosion_stata.png", (np.true_divide(self.occ_map, 100.0) * 255.0))
+
+        elif skimage_imported:
+            rospy.loginfo("Using skimage to dilate map!")
+            self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+            
+            
+            #Here, values are -1, 0, or 100, 
+            #Dilates image for use
+            self.occ_map = self.occ_map / 100  * 255 
+            dilation = skimage.morphology.dilation(self.occ_map, disk(7))
+            dilation = dilation /255 * 100
+            self.occ_map = dilation
+        else:
+            rospy.loginfo("Could not find eroded map or skimage package at path: "+self.eroded_map_path+"\n\t. Using standard occ grid")
+            self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
+        # set up max indices
+        self.u_max, self.v_max = self.occ_map.shape
+        self.u_max -= 1
+        self.v_max -= 1
+
         mo = msg.info.origin.orientation
 
         self.resolution = msg.info.resolution
@@ -92,18 +155,20 @@ class PathPlan(object):
 
         rospy.loginfo("map initialized!!")
         rospy.loginfo("map shape: "+str(self.occ_map.shape))
+        rospy.loginfo("true map shape: "+str((msg.info.height, msg.info.width)))
         rospy.loginfo("map resolution: "+str(self.resolution))
         rospy.loginfo("map orientation: "+str(self.map_orientation))
         rospy.loginfo("map position: "+str(self.map_position))
         rospy.loginfo("map rotation matrix:\n"+str(self.map_rot_mat))
 
         rospy.loginfo("nonzero indices in map: "+str(np.nonzero(self.occ_map)))
+        self.mapIsDone = True
 
     def odom_cb(self, msg):
         start_pt = msg.pose.pose.position # Point object
 
         # if the map isn't set, we can't use it to initialize start points
-        if self.occ_map is None: return
+        if self.mapIsDone is False: return
 
         np_start = np.array([[start_pt.x, start_pt.y]])
         # x = start_pt.x
@@ -112,11 +177,20 @@ class PathPlan(object):
         # # swap x, y then convert to u, v
         # start_point = (np.array([[y, x]]) - self.map_position) / self.resolution
 
+        
+
         self.start_point = np.array([self.convert_x_to_pixels(np_start)])
+
+        # rospy.loginfo("Scipy IM values at odom: "+str(self.occ_map[int(self.start_point[0,0]), int(self.start_point[0,1])]))
 
 
     def goal_cb(self, msg):
-        if self.occ_map is None: return
+        if self.mapIsDone is False: return
+
+        if self.start_point is None: 
+            rospy.loginfo("Could not plan a trajectory because there's no odom!"+\
+                "\n\tMake sure that you're publishing to "+self.odom_topic)
+            return
 
         self.goal_point = msg.pose.position # Point object
 
@@ -129,6 +203,8 @@ class PathPlan(object):
         # end_point = (np.array([[y, x]]) - self.map_position) / self.resolution
 
         end_point = np.array([self.convert_x_to_pixels(np_end)])
+
+        self.start_time = rospy.get_time()
 
         # if we're setting the goal, we should already have a start point so plan the path!
         self.plan_path(self.start_point, end_point, self.occ_map)
@@ -180,7 +256,7 @@ class PathPlan(object):
         self.trajectory.clear()
         rospy.loginfo("Starting path planning!!")
 
-        step_size = rospy.get_param("/lab6/step_size", 3)
+        step_size = rospy.get_param("/lab6/step_size", 5)
         rospy.loginfo("Using step size of "+str(step_size)+" from parameter: /lab6/step_size")
 
         # Initialize here so we can reuse it
@@ -204,14 +280,18 @@ class PathPlan(object):
 
             # we don't want any points outside of the occupancy bounds but that probably won't happen?
             # TODO
+            _u = np.clip(check_points[:, 0], 0, self.u_max).reshape(-1,1) # u
+            _v = np.clip(check_points[:, 1], 0, self.v_max).reshape(-1,1) # v
+
+            true_check_points = np.hstack((_u, _v))
 
             # I couldn't figure out how to use numpy indexing/slicing so using a for loop 0.0
-            for p in check_points.tolist():
+            for p in true_check_points.tolist():
                 # access the occupancy grid and pull out the values
                 occ_val = map[p[0], p[1]]
 
-                if occ_val > self.occupancy_cutoff:
-                    # if we detect _any_ collision, stop early
+                if occ_val > self.occupancy_cutoff: # high numbers should be treated as a collision
+                    # print("We found a collision!!!")
                     return True
 
             return False
@@ -239,24 +319,31 @@ class PathPlan(object):
             if tup_vers in visited: continue
             visited.add(tup_vers)
 
-            # visualize the current point we're considering
-            x, y = self.convert_pixels_to_x(last_point)
-            current_pose.pose.position.x = x
-            current_pose.pose.position.y = y
-            self.pose_pub.publish(current_pose)
+            if self.pose_pub.get_num_connections() > 0:
+                # visualize the current point we're considering
+                x, y = self.convert_pixels_to_x(last_point)
+                current_pose.pose.position.x = x
+                current_pose.pose.position.y = y
+                self.pose_pub.publish(current_pose)
 
 
             if np.linalg.norm(last_point - end_point) <= step_size:
                 # if we're within a __circle__ of radius step_size to the goal
+                self.time_to_plan = rospy.get_time() - self.start_time
                 full_path = path_so_far
                 rospy.loginfo("Path found! :)")
                 break
 
             # Create children from that last point; treat points as indices in the map
-            children = last_point + step_size * adjacent_squares            
+            children = last_point + step_size * adjacent_squares
+
+            _u = np.clip(children[:, 0], 0, self.u_max).reshape(-1,1) # u
+            _v = np.clip(children[:, 1], 0, self.v_max).reshape(-1,1) # v
+
+            true_check_points = np.hstack((_u, _v))          
 
             # Prune collisions, update costs, and add to the agenda
-            for c in children:
+            for c in true_check_points:
                 if not in_collision(c):
                     # we can update cost and add it to the agenda
                     tup_vers = (c[0], c[1])
@@ -288,15 +375,29 @@ class PathPlan(object):
 
         if full_path is not None:
             # we found a path!
+
+            _x, _y = None, None
+            path_length = 0
+
             for p in full_path:
                 # p numpy (1,2)
                 s_x, s_y = self.convert_pixels_to_x(p)
 
+                if _x is not None:
+                    path_length += np.linalg.norm(np.array([s_x, s_y]) - np.array([_x, _y]))
+
+                _x, _y = s_x, s_y
+
                 new_point = Point32(s_x, s_y, 0)
                 self.trajectory.addPoint(new_point)
 
+            path_length += np.linalg.norm(np.array([_x, _y]) - np.array([self.goal_point.x, self.goal_point.y]))
+
             # finally, add the goal point
             self.trajectory.addPoint(self.goal_point)
+
+            rospy.loginfo("Found path length of: "+str(round(path_length, 2))+" m")
+            rospy.loginfo("Found path in: "+str(round(self.time_to_plan, 4))+" s")
 
             # publish trajectory
             self.traj_pub.publish(self.trajectory.toPoseArray())
