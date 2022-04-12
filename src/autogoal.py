@@ -6,13 +6,24 @@ from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Pose
 
 if __name__ == "__main__":
     rospy.init_node("autogoalset")
-    start_points = [(-3.2, -1.588), (-30.578, -.599)]
-    end_points = [(-14.527, 11.937), (-10.491, 16.034)]
+
+    #Initialize test cases
+    test_cases = dict()
+    test_cases["straight_path1"] = [(-3.2, -1.588),(-30.578, -.599)]
+    test_cases["hallway_turn1"] = [(-3.2, -1.588), (-14.527, 11.937)]
+    test_cases["hallway_turn2"] = [(-30.578, -.599), (-10.491, 16.034)]
+    
+    
     startpub  = rospy.Publisher("/initialpose", PoseWithCovarianceStamped, queue_size = 10)
     goalpub= rospy.Publisher("/move_base_simple/goal", PoseStamped, queue_size = 10)
-    test = 1
-    start = start_points[test]
-    end = end_points[test]
+
+
+    test_case = test_cases["straight_path1"]
+
+
+
+    start = test_case[0]
+    end = test_case[1]
     rospy.sleep(1.)
 
     rospy.loginfo("Working: after sleep")
