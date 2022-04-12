@@ -49,6 +49,9 @@ class PathPlan(object):
         
         self.eroded_map_exists = os.path.exists(self.eroded_map_path)
 
+        self.start_time = 0
+        self.time_to_plan = 0
+
         self.odom_topic = rospy.get_param("~odom_topic")
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
         self.trajectory = LineTrajectory("/planned_trajectory")
@@ -201,6 +204,8 @@ class PathPlan(object):
 
         end_point = np.array([self.convert_x_to_pixels(np_end)])
 
+        self.start_time = rospy.get_time()
+
         # if we're setting the goal, we should already have a start point so plan the path!
         self.plan_path(self.start_point, end_point, self.occ_map)
 
@@ -251,7 +256,7 @@ class PathPlan(object):
         self.trajectory.clear()
         rospy.loginfo("Starting path planning!!")
 
-        step_size = rospy.get_param("/lab6/step_size", 3)
+        step_size = rospy.get_param("/lab6/step_size", 5)
         rospy.loginfo("Using step size of "+str(step_size)+" from parameter: /lab6/step_size")
 
         # Initialize here so we can reuse it
@@ -324,6 +329,7 @@ class PathPlan(object):
 
             if np.linalg.norm(last_point - end_point) <= step_size:
                 # if we're within a __circle__ of radius step_size to the goal
+                self.time_to_plan = rospy.get_time() - self.start_time
                 full_path = path_so_far
                 rospy.loginfo("Path found! :)")
                 break
@@ -369,15 +375,29 @@ class PathPlan(object):
 
         if full_path is not None:
             # we found a path!
+
+            _x, _y = None, None
+            path_length = 0
+
             for p in full_path:
                 # p numpy (1,2)
                 s_x, s_y = self.convert_pixels_to_x(p)
 
+                if _x is not None:
+                    path_length += np.linalg.norm(np.array([s_x, s_y]) - np.array([_x, _y]))
+
+                _x, _y = s_x, s_y
+
                 new_point = Point32(s_x, s_y, 0)
                 self.trajectory.addPoint(new_point)
 
+            path_length += np.linalg.norm(np.array([_x, _y]) - np.array([self.goal_point.x, self.goal_point.y]))
+
             # finally, add the goal point
             self.trajectory.addPoint(self.goal_point)
+
+            rospy.loginfo("Found path length of: "+str(round(path_length, 2))+" m")
+            rospy.loginfo("Found path in: "+str(round(self.time_to_plan, 4))+" s")
 
             # publish trajectory
             self.traj_pub.publish(self.trajectory.toPoseArray())

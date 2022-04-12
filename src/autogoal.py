@@ -7,6 +7,7 @@ from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Pose
 
 if __name__ == "__main__":
     rospy.init_node("autogoalset")
+    rospy.loginfo("Node Initialized!")
 
     
     #Initialize test cases
@@ -14,6 +15,7 @@ if __name__ == "__main__":
     test_cases["straight_path1"] = [(-3.2, -.599),(-30.578, -.599)]
     test_cases["hallway_turn1"] = [(-3.2, -1.588), (-14.527, 11.937)]
     test_cases["hallway_turn2"] = [(-30.578, -.599), (-10.491, 16.034)]
+    test_cases["across_map1"] = [(-20.065, 26.127), (-50.196, -0.434)]
     
 
     startpub  = rospy.Publisher("/initialpose", PoseWithCovarianceStamped, queue_size = 10)
@@ -32,7 +34,7 @@ if __name__ == "__main__":
 
     start = test_case[0]
     end = test_case[1]
-    rospy.sleep(1.)
+    rospy.sleep(0.75)
 
     rospy.loginfo("Working: after sleep")
     done = False
@@ -46,7 +48,7 @@ if __name__ == "__main__":
     startpub.publish(initpose)
 
     rospy.loginfo("Publishing initial pose, sleeping for 2 seconds")
-    rospy.sleep(1)
+    rospy.sleep(0.75)
     
     #Goal Pose
     goalpose = PoseStamped()
