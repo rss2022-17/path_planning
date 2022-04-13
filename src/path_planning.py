@@ -20,7 +20,7 @@ class PathPlan(object):
         self.sample_range = 200
         self.max_dist = 20
         self.path_step = 2
-        self.num_steps = 1500 # can be set as a parameter
+        self.num_steps = 10000 # can be set as a parameter
         self.end_point_dst_param = 20 # can be set as a parameter
 
         self.start_time = 0
@@ -171,8 +171,8 @@ class PathPlan(object):
                     center = rand_node
                     center_to_end = dist_from_end
             
-            if i % 100 == 0:
-                rospy.loginfo("Still running. We've searched along "+str(i)+ " steps")
+            # if i % 100 == 0:
+            #     rospy.loginfo("Still running. We've searched along "+str(i)+ " steps")
 
         # if no path exists within num_steps, return empty list as unsuccessful
         rospy.loginfo("Couldn't find a path within "+str(self.num_steps)+" steps")
