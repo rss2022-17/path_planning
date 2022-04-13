@@ -18,8 +18,8 @@ class PurePursuit(object):
     def __init__(self):
         self.odom_topic       = rospy.get_param("~odom_topic")
         #self.lookahead        = 1.5
-        self.speed            = 4
-        #self.wrap             = # FILL IN #
+        self.speed            = 1
+        #self.w/ap             = # FILL IN #
         self.wheelbase_length = 0.32#
         self.shutdown_threshold = 5 #if off by then stop
         self.trajectory  = utils.LineTrajectory("/followed_trajectory")
@@ -90,7 +90,7 @@ class PurePursuit(object):
         #step 3, find goal point
         intersecting_points = []
         Q = [car_x, car_y]
-        r = self.speed*0.5 #dynamic lookahead rule
+        r = np.max((self.speed, 1)) #dynamic lookahead rule
         for i in range(min_ind, len(points)-1): #-1 because we're looking at segments between points
             P1 = points[i]
             V = points[i+1]-P1
