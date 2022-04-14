@@ -18,7 +18,6 @@ class PathPlan(object):
     def __init__(self):
         self.num_steps = 10000 # can be set as a parameter
         self.end_point_dst_param = 20 # can be set as a parameter
-        self.frontier_threshold = 20 # can be set as a parameter
 
         self.start_time = 0
         self.time_to_plan = 0
@@ -74,10 +73,11 @@ class PathPlan(object):
 
     def random_node(self, map):
         # Returns random node within map that isn't covered by an obstacle
-        u = random.randint(0, self.map_width - 1)
-        v = random.randint(0, self.map_height - 1)
-        if (0 <= u < self.map_width) and (0 <= v < self.map_height) and (map[v, u] == 0):
-            return self.Node(u, v)
+        while True:
+            u = random.randint(0, self.map_width - 1)
+            v = random.randint(0, self.map_height - 1)
+            if (0 <= u < self.map_width) and (0 <= v < self.map_height) and (map[v,u] == 0):
+                return self.Node(u, v)
 
     def edge_creation(self, node_1, node_2, map):
         # check path collision and returns a boolean of whether edge does not pass through any obstacles
@@ -85,17 +85,27 @@ class PathPlan(object):
             node_2.parent = node_1.parent
         else:
             # y = mx + b --> b = y - mx
-            m = (node_1.p[1] - node_2.p[1]) / (node_1.p[0] - node_2.p[0])
-            b = node_1.p[1] - m * node_1.p[0]
+            if (node_1.p[0] - node_2.p[0] == 0): # slope of infinity
+                # height coordinates
+                start = min(node_1.p[1],node_2.p[1]) 
+                stop = max(node_1.p[1],node_2.p[1])
 
-            # width coordinates
-            start = min(node_1.p[0],node_2.p[0]) 
-            stop = max(node_1.p[0],node_2.p[0])
+                x = node_1.p[0]
+                for y in range(start,stop):
+                    if map[int(y),x] != 0:
+                        return False
+            else:
+                m = (node_1.p[1] - node_2.p[1]) / (node_1.p[0] - node_2.p[0])
+                b = node_1.p[1] - m * node_1.p[0]
 
-            for x in range(start,stop): # iterate over width (1 pixel at a time)
-                y = m*x + b # get corresponding height pixel
-                if map[y,x] != 0:
-                    return False
+                # width coordinates
+                start = min(node_1.p[0],node_2.p[0]) 
+                stop = max(node_1.p[0],node_2.p[0])
+
+                for x in range(start,stop): # iterate over width (1 pixel at a time)
+                    y = m*x + b # get corresponding height pixel
+                    if map[int(y),x] != 0:
+                        return False
             
             node_2.parent = node_1
         return True
@@ -137,34 +147,26 @@ class PathPlan(object):
         # list of nodes created and connected
         nodes = [start_node]
         for i in range(self.num_steps):
-            within_frontier = False 
+            # gets a random node
+            rand_node = self.random_node(map)
 
-            # gets node within a certain distance (frontier_threshold) of a node already in the tree
-            while not within_frontier:
-                # gets a random node
-                rand_node = self.random_node(map)
+            if map[rand_node.p[1],rand_node.p[0]] == 0: # is the random node inside an obstacle?
                 # gets the closest node
                 closest_node = self.get_closest(rand_node, nodes)
 
-                # get distance between random node and closest node
-                rand_closest_dist = self.get_dist(rand_node, closest_node)
-                if rand_closest_dist < self.frontier_threshold:
-                    within_frontier = True
-
-
-            if self.edge_creation(closest_node, rand_node, map):
-                # if an edge can be created, add to node list
-                nodes.append(rand_node)
-                dist_from_end = self.get_dist(rand_node, end_node)
-                if dist_from_end <= self.end_point_dst_param:
-                    # if the random node is within a certain distance from the end point, check if can create an edge
-                    # between the two
-                    if self.edge_creation(rand_node, end_node, map):
-                        # if possible return the path found
-                        return self.final_path(end_node)
-            
-            # if i % 100 == 0:
-            #     rospy.loginfo("Still running. We've searched along "+str(i)+ " steps")
+                if self.edge_creation(closest_node, rand_node, map):
+                    # if an edge can be created, add to node list
+                    nodes.append(rand_node)
+                    dist_from_end = self.get_dist(rand_node, end_node)
+                    if dist_from_end <= self.end_point_dst_param:
+                        # if the random node is within a certain distance from the end point, check if can create an edge
+                        # between the two
+                        if self.edge_creation(rand_node, end_node, map):
+                            # if possible return the path found
+                            return self.final_path(end_node)
+                
+                # if i % 100 == 0:
+                #     rospy.loginfo("Still running. We've searched along "+str(i)+ " steps")
 
         # if no path exists within num_steps, return empty list as unsuccessful
         rospy.loginfo("Couldn't find a path within "+str(self.num_steps)+" steps")
