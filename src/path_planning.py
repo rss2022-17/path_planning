@@ -95,8 +95,35 @@ class PathPlan(object):
     def goal_cb(self, msg):
         # sets goal position
         self.end = (msg.pose.position.x, msg.pose.position.y)
-        self.start_time = rospy.get_time()
-        self.plan_path(self.start, self.end, self.occ_map)
+
+        trials = 50
+        path_lens = list()
+        plan_times = list()
+
+        for trial_num in range(trials):
+            print("Starting trial "+str(trial_num + 1) + "/" + str(trials))
+
+            self.start_time = rospy.get_time()
+            p_len, p_time = self.plan_path(self.start, self.end, self.occ_map)
+
+            if p_len: # did we find a path?
+                path_lens.append(p_len)
+                plan_times.append(p_time)
+
+        if path_lens:
+            print(str(len(path_lens)) + " trials found a path")
+
+            np_path_lens = np.array([path_lens])
+            np_plan_times = np.array([plan_times])
+
+            print("====== PATH LEN ======")
+            print("Average path length: "+str(np.mean(np_path_lens)) + " m")
+            print("Standard deviation: "+str(np.std(np_path_lens)) + " m")
+
+            
+            print("====== PLAN TIME ======")
+            print("Average plan time: "+str(np.mean(np_plan_times)) + " s")
+            print("Standard deviation: "+str(np.std(np_plan_times)) + " s")
 
     class Node:
         # creates an object with a coordinate and parent attribute
@@ -226,13 +253,15 @@ class PathPlan(object):
         rospy.loginfo("Found path with length of: "+str(round(path_length, 2)) + " m")
         rospy.loginfo("Found path in: "+str(round(self.time_to_plan, 4))+ " s")
 
-        self.time_to_plan = 0
+        # self.time_to_plan = 0
 
         # publish trajectory
         self.traj_pub.publish(self.trajectory.toPoseArray())
 
         # visualize trajectory Markers
         self.trajectory.publish_viz()
+
+        return path_length, self.time_to_plan
 
 if __name__=="__main__":
     rospy.init_node("path_planning")
