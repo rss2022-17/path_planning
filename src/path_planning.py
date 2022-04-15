@@ -10,6 +10,8 @@ import time, os
 from utils import LineTrajectory
 from tf import transformations as ts
 import cv2
+from scipy.misc import imread, imsave
+
 
 class PathPlan(object):
     """ Listens for goal pose published by RViz and uses it to plan a path from
@@ -22,6 +24,22 @@ class PathPlan(object):
         self.path_step = 2
         self.num_steps = 10000 # can be set as a parameter
         self.end_point_dst_param = 20 # can be set as a parameter
+
+        self.occ_map = None
+        self.eroded_map_exists = False
+
+        self.eroded_map_path = "/home/racecar/racecar_ws/src/path_planning/maps/BAD_IMAGE.png"
+        try:
+            rp = rospkg.RosPack()
+            self.lab6_path = rp.get_path("lab6")
+            self.eroded_map_path = self.lab6_path + "/maps/erosion_stata.png"
+
+            rospy.loginfo("Lab6 path is: "+str(self.lab6_path))
+            rospy.loginfo("Eroded map path is: "+str(self.eroded_map_path))
+        except rospkg.ResourceNotFound:
+            rospy.loginfo("Could not get path to lab6")
+        
+        self.eroded_map_exists = os.path.exists(self.eroded_map_path)
 
         self.start_time = 0
         self.time_to_plan = 0
@@ -45,6 +63,20 @@ class PathPlan(object):
         return [res[0], res[1]]
 
     def map_cb(self, msg):
+                # Store all of the map data into instance variables
+        if self.eroded_map_exists:
+            rospy.loginfo("Found eroded map in file system! Using this as our occupancy grid")
+
+            im = imread(self.eroded_map_path, flatten=True)
+
+            self.im = im
+            self.occ_map = (1 - np.true_divide(im, 255.0)) * 100.0 # convert 255 brightness scale to 100 darkness scale
+            self.occ_map = np.flip(self.occ_map, axis=0) # occ grid is actually flipped vertically
+
+        else:
+            rospy.loginfo("Could not find eroded map or skimage package at path: "+self.eroded_map_path+"\n\t. Using standard occ grid")
+            self.occ_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+
         # builds a map
         self.map_height = msg.info.height
         self.map_width = msg.info.width
@@ -64,7 +96,7 @@ class PathPlan(object):
         # sets goal position
         self.end = (msg.pose.position.x, msg.pose.position.y)
         self.start_time = rospy.get_time()
-        self.plan_path(self.start, self.end, self.map_cell_2d)
+        self.plan_path(self.start, self.end, self.occ_map)
 
     class Node:
         # creates an object with a coordinate and parent attribute
@@ -152,8 +184,6 @@ class PathPlan(object):
         while i < self.num_steps:
             # gets a random node
             rand_node = self.random_node(map)
-            rospy.logwarn(rand_node.p[1])
-            rospy.logwarn(rand_node.p[0])
             if map[int(rand_node.p[1]), int(rand_node.p[0])] == 0:
                 i += 1
                 # gets the closest node
