@@ -75,14 +75,14 @@ class PathPlan(object):
         def __eq__(self, other):
             return self.p[0] == other.p[0] and self.p[1] == other.p[1]
 
-    def random_node(self, c, map):
+    def random_node(self, map):
         # Returns random node from a set radius around the given point
         # goal_sample% of the time it returns the end point
         while True:
             if random.randint(0, 100) > self.goal_sample:
                 # 
-                u = c.p[0] + random.randint(-self.sample_range, self.sample_range)
-                v = c.p[1] + random.randint(-self.sample_range, self.sample_range)
+                u = random.randint(0, self.map_width+1)
+                v = random.randint(0, self.map_height+1)
                 if (0 <= u < self.map_width) and (0 <= v < self.map_height) and (map[v, u] == 0):
                     return self.Node(u, v)
             else:
@@ -145,31 +145,30 @@ class PathPlan(object):
         # creates start and end nodes
         end_node = self.Node(*end_point)
         start_node = self.Node(*start_point)
-        # initializes the center of the random point to be the start node
-        center = start_node
-        # absolute distance from start to end
-        center_to_end = self.get_dist(center, end_node)
+
         # list of nodes created and connected
         nodes = [start_node]
-        for i in range(self.num_steps):
+        i = 0
+        while i < self.num_steps:
             # gets a random node
-            rand_node = self.random_node(center, map)
-            # gets the closest node
-            closest_node = self.get_closest(rand_node, nodes)
-            if self.edge_creation(closest_node, rand_node, map):
-                # if an edge can be created, add to node list
-                nodes.append(rand_node)
-                dist_from_end = self.get_dist(rand_node, end_node)
-                if dist_from_end <= self.end_point_dst_param:
-                    # if the random node is within a certain distance from the end point, check if can create an edge
-                    # between the two
-                    if self.edge_creation(rand_node, end_node, map):
-                        # if possible return the path found
-                        return self.final_path(end_node)
-                # otherwise, change the center to around the newly created node and redo the process
-                elif dist_from_end < center_to_end:
-                    center = rand_node
-                    center_to_end = dist_from_end
+            rand_node = self.random_node(map)
+            rospy.logwarn(rand_node.p[1])
+            rospy.logwarn(rand_node.p[0])
+            if map[int(rand_node.p[1]), int(rand_node.p[0])] == 0:
+                i += 1
+                # gets the closest node
+                closest_node = self.get_closest(rand_node, nodes)
+                if self.edge_creation(closest_node, rand_node, map):
+                    # if an edge can be created, add to node list
+                    nodes.append(rand_node)
+                    dist_from_end = self.get_dist(rand_node, end_node)
+                    if dist_from_end <= self.end_point_dst_param:
+                        # if the random node is within a certain distance from the end point, check if can create an edge
+                        # between the two
+                        if self.edge_creation(rand_node, end_node, map):
+                            # if possible return the path found
+                            return self.final_path(end_node)
+
             
             # if i % 100 == 0:
             #     rospy.loginfo("Still running. We've searched along "+str(i)+ " steps")
